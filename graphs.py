@@ -10,6 +10,18 @@ import matplotlib.pyplot as plt
 # 
 
 class Converter:
+    '''
+    Given an adjaceny matrix for a network, an instance of this class
+    will allow conversion between the 3D array version of phi, and a
+    flattened array version of phi representing only the degrees of freedom,
+    i.e. the elements that are allowed to be nonzero.
+
+    This is useful for getting the inputs to the objective function
+    for scipy to optimize.
+
+    This class also allows converting back, say from the flat array result
+    of scipy.optimize to a full 3D array representation of the routing tables
+    '''
     def __init__(self, adj):
         self.n = adj.shape[0]
         self.mask = self.genMask(adj)
@@ -34,36 +46,49 @@ class Converter:
         return phi[self.mask]
 
 
+
 class Network:
+    '''
+    This class represents a network, including various state necessary for 
+    the routing algorithms we are implementing
+    '''
     def __init__(self, n, p=0.4, R_gen=np.random.binomial, seed=7, D=None):
-        self.n = n
-        self.p = p
-        self.seed = seed
+        self.n = n          # Number of hosts
+        self.p = p          # Probability of an edge
+        self.seed = seed    # Random seed to ensure same graph each time
 
         if D is None:
             D = np.ones((n,n))
-        self.D = D
+        self.D = D          # Scaling factors for F_ik's in objective function
 
         inc = 0
         self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed)
         while not nx.is_connected(self.graph):
-            inc += 1
+            inc += 1 # Update random seed to get a new graph
             self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed+inc)
 
-        self.adj = np.asarray(nx.adjacency_matrix(self.graph).todense())
+        # Adjacency matrix of our graph
+        self.adj = np.asarray(nx.adjacency_matrix(self.graph).todense()) 
+
+        # R matrix where R_ij is traffic generated from i going to j
         np.random.seed(seed)
-        self.R = R_gen(n, p, size=(n,n))
+        self.R = R_gen(n, p, size=(n,n)) 
         self.R[np.eye(n).astype(bool)] = 0 # Make sure no traffic from node to itself
-        self.converter = Converter(self.adj)
+
+        # An instance of the converter class for easy use with scipy.optimize
+        self.converter = Converter(self.adj) 
         self.df = self.converter.degrees_of_freedom
 
-        self.T = None
-        self.F = None
-        self.phi = None
+        self.T = None       # T_ij is traffic going through i en route to j
+        self.F = None       # F_ik is traffic along edge (i, k)
+        # Routing tables, Phi[j, i, k] is fraction of traffic passing through 
+        # i on the way to j that gets routed to node k next
+        self.phi = None     
 
 
     def visualize(self, withEdgeTraffic=False, layout='spring', \
             seed=None, label_pos=0.3, ax=None):
+        ''' Helper function to visualize networks '''
 
         if ax is None:
             ax = plt.subplot(111)
@@ -85,11 +110,13 @@ class Network:
 
 
     def updateFT(self):
+        ''' This will update the F and T matrices using the current routing tables '''
         self.T = getTraffic(self.phi, self.R)
         self.F = getF(self.phi, self.T)
 
 
 def getTrafficCol(phi, R, colIdx):
+    ''' Get a single column of T by solving a linear system '''
     n = R.shape[0]
     b = R[:, colIdx]
     A = (np.eye(n) - phi[colIdx, :, :]) # A_ij = phi_ij(colIdx)
@@ -100,6 +127,7 @@ def getTrafficCol(phi, R, colIdx):
 
 
 def getTraffic(phi, R):
+    ''' Get all columns of T by solving n linear systems '''
     n = R.shape[0]
     T = np.empty((n,n))
     for i in range(n):
@@ -108,6 +136,7 @@ def getTraffic(phi, R):
 
 
 def getF(phi, T):
+    ''' Get the edge traffic amounts from the routing tables and T matrix '''
     n = T.shape[0]
     F = np.empty((n,n))
     for i in range(n):
@@ -116,11 +145,22 @@ def getF(phi, T):
 
 
 def D_T(network):
+    ''' 
+    The expected packet delay of a network, this is the objective function
+    we're choosing routing tables to minimize. This is a standalone version
+    of the objective, for the one used in optimization routines see
+    obj function defined below
+    '''
     network.updateFT()
     return np.sum(network.D * network.F)
 
 
 def obj(phi_flat, network):
+    '''
+    This calculates D_T, the expected packet delay of a network. This
+    version of the objective is used for optimization routines, for a standalone
+    D_T version see the D_T function defined above
+    '''
     n = network.n
     R = network.R
     D = network.D
