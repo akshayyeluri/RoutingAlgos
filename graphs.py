@@ -1,13 +1,10 @@
 import numpy as np
 import networkx as nx
+import pickle
 import scipy.stats as st
-from IPython import embed
 import matplotlib.pyplot as plt
+from IPython import embed
 
-# TODO: 
-# initialize graph with adjacency matrix
-# fix visualization (directed graph)
-# 
 
 class Converter:
     '''
@@ -49,42 +46,50 @@ class Converter:
 
 class Network:
     '''
-    This class represents a network, including various state necessary for 
+    This class represents a network, including various state necessary for
     the routing algorithms we are implementing
     '''
-    def __init__(self, n, p=0.4, R_gen=np.random.binomial, seed=7, D=None):
-        self.n = n          # Number of hosts
-        self.p = p          # Probability of an edge
-        self.seed = seed    # Random seed to ensure same graph each time
+    def __init__(self, adj=None, R=np.random.binomial, D=None, phi=None, \
+                                         seed=7, n=None, p=0.4):
+        self.seed = seed    # Random seed to ensure same graph/results each time
+
+        if adj is not None: # Initialize from adjacency matrix
+            self.n = adj.shape[0]
+            self.adj = adj
+            self.graph = nx.from_numpy_matrix(adj, parallel_edges=False, \
+                                                   create_using=nx.DiGraph)
+        else: # Initialize from n, p
+            self.n = n          # Number of hosts
+            inc = 0
+            self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed)
+            while not nx.is_connected(self.graph):
+                inc += 1 # Update random seed to get a new graph
+                self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed+inc)
+            self.graph = self.graph.to_directed()
+            # Adjacency matrix of our graph
+            self.adj = np.asarray(nx.adjacency_matrix(self.graph).todense())
 
         if D is None:
             D = np.ones((n,n))
         self.D = D          # Scaling factors for F_ik's in objective function
 
-        inc = 0
-        self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed)
-        while not nx.is_connected(self.graph):
-            inc += 1 # Update random seed to get a new graph
-            self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed+inc)
-        self.graph = self.graph.to_directed()
-
-        # Adjacency matrix of our graph
-        self.adj = np.asarray(nx.adjacency_matrix(self.graph).todense()) 
-
         # R matrix where R_ij is traffic generated from i going to j
         np.random.seed(seed)
-        self.R = R_gen(n, p, size=(n,n)) 
-        self.R[np.eye(n).astype(bool)] = 0 # Make sure no traffic from node to itself
+        if callable(R):
+            self.R = R(n, p, size=(n,n))
+            self.R[np.eye(n).astype(bool)] = 0 # Make sure no traffic from node to itself
+        else:
+            self.R = R
 
         # An instance of the converter class for easy use with scipy.optimize
-        self.converter = Converter(self.adj) 
+        self.converter = Converter(self.adj)
         self.df = self.converter.degrees_of_freedom
 
         self.T = None       # T_ij is traffic going through i en route to j
         self.F = None       # F_ik is traffic along edge (i, k)
-        # Routing tables, Phi[j, i, k] is fraction of traffic passing through 
+        # Routing tables, Phi[j, i, k] is fraction of traffic passing through
         # i on the way to j that gets routed to node k next
-        self.phi = None     
+        self.setPhi(phi)
 
 
     def visualize(self, withEdgeTraffic=False, layout='spring', \
@@ -102,37 +107,77 @@ class Network:
             pos = nx.planar_layout(self.graph)
 
         nx.draw_networkx(self.graph, pos=pos, ax=ax)
-        if withEdgeTraffic:
-            self.updateFT()
+        if withEdgeTraffic and self.checkPhi():
             labels = {(i,j): self.F[i,j] for i in range(n) for j in range(n) if self.F[i,j] != 0}
             nx.draw_networkx_edge_labels(self.graph, pos=pos, ax=ax,\
                     edge_labels=labels, label_pos=label_pos)
         return ax
 
 
-    def updateFT(self):
-        ''' This will update the F and T matrices using the current routing tables '''
-        self.T = getTraffic(self.phi, self.R)
-        self.F = getF(self.phi, self.T)
+
+    def setPhi(self, phi):
+        ''' This will set the routing tables, and will update the
+        F and T matrices using the new routing tables '''
+        self.phi = phi
+        if self.phi is not None:
+            self.T = getTraffic(self.phi, self.R)
+            self.F = getF(self.phi, self.T)
 
 
-def getTrafficCol(phi, R, colIdx):
-    ''' Get a single column of T by solving a linear system '''
-    n = R.shape[0]
-    b = R[:, colIdx]
-    A = (np.eye(n) - phi[colIdx, :, :]) # A_ij = phi_ij(colIdx)
-    if np.linalg.det(A) == 0:
-        raise ValueError('LinAlgError caused by invalid phi!')
-    t = np.linalg.solve(A, b)
-    return t
+    def hasPhi(self):
+        return (hasattr(self, 'phi') and self.phi is not None)
+
+
+    def checkPhi(self):
+        '''
+        This will check if the network has routing tables phi and
+        if those tables are valid
+        '''
+        if self.hasPhi():
+            mask = (self.adj == 0)
+            cond1 = np.all(self.phi[:, mask] == 0) # Make sure no phi where no edge
+            # Make sure valid probability distributions
+            cond2 = np.all(np.isclose(np.sum(self.phi, axis=2), \
+                                      1 - np.eye(len(self.phi))))
+            return (cond1 and cond2)
+        return False
+
+
+    def D_T(self):
+        '''
+        The expected packet delay of a network, this is the objective function
+        we're choosing routing tables to minimize. This is a standalone version
+        of the objective, for the one used in optimization routines see
+        obj function defined below
+        '''
+        if not self.hasPhi():
+            raise ValueError('No routing tables for network')
+        return np.sum(self.D * self.F)
+
+
+    def toPickle(self, fName):
+        ''' Dumps the network to a pickle '''
+        with open(fName, 'wb') as f:
+            pickle.dump((self.adj, self.R, self.D, self.phi, self.seed), f)
+
+
+def netFromPickle(fName):
+    '''Generate a network from a pickle file'''
+    with open(fName, 'rb') as f:
+        net = Network(*pickle.load(f))
+    return net
 
 
 def getTraffic(phi, R):
     ''' Get all columns of T by solving n linear systems '''
     n = R.shape[0]
     T = np.empty((n,n))
-    for i in range(n):
-        T[:, i] = getTrafficCol(phi, R, i)
+    for j in range(n):
+        A = (np.eye(n) - phi[j, :, :]) # A_ik = phi_ik(j)
+        b = R[:, j]
+        if np.linalg.det(A) == 0:
+            raise ValueError('LinAlgError caused by invalid phi!')
+        T[:, j] = np.linalg.solve(A, b)
     return T
 
 
@@ -145,22 +190,11 @@ def getF(phi, T):
     return F
 
 
-def D_T(network):
-    ''' 
-    The expected packet delay of a network, this is the objective function
-    we're choosing routing tables to minimize. This is a standalone version
-    of the objective, for the one used in optimization routines see
-    obj function defined below
-    '''
-    network.updateFT()
-    return np.sum(network.D * network.F)
-
-
 def obj(phi_flat, network):
     '''
     This calculates D_T, the expected packet delay of a network. This
     version of the objective is used for optimization routines, for a standalone
-    D_T version see the D_T function defined above
+    D_T version see the D_T method in the Network class
     '''
     n = network.n
     R = network.R
@@ -174,44 +208,5 @@ def obj(phi_flat, network):
         return np.inf
     F = getF(phi, T)
     return np.sum(D * F)
-
-   
-
-############################################################
-# Deprecated
-############################################################
-
-#class Converter:
-#    def __init__(self, adj):
-#        self.n = adj.shape[0]
-#        mask, first = self.genMaskAndFirst(adj)
-#        self.mask = mask
-#        self.first = first
-#        self.degrees_of_freedom = np.sum(self.mask)
-#
-#
-#    def genMaskAndFirst(self, adj):
-#        first_inds = (np.arange(self.n), np.array([np.where(row)[-1][0] for row in adj]))
-#        mask0 = adj.copy()
-#        mask0[first_inds] = False
-#        mask = np.tile(mask0, (self.n, 1, 1))
-#        for i in range(self.n):
-#            mask[i, i, :] = False
-#        return mask.astype(bool), first_inds
-#
-#
-#    def toPhi(self, flat_arr):
-#        phi = np.zeros((self.n, self.n, self.n))
-#        phi[self.mask] = flat_arr
-#        residual = (1 - np.eye(self.n)) - np.sum(phi, axis=2)
-#        for j in range(self.n):
-#            sub_arr = phi[j]
-#            sub_arr[self.first] = residual[j, :]
-#        return phi
-#
-#
-#    def fromPhi(self, phi):
-#        return phi[self.mask]
-        
 
 
