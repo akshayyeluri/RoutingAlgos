@@ -16,7 +16,7 @@ def integerRouting(net):
             inds = np.where(net.adj[src])[0]
             ranges.append(inds)
     n_iter = reduce(lambda x,y: x * y, [len(r) for r in ranges], 1)
-    
+
     for inds in tqdm.tqdm(itertools.product(*ranges), \
                           desc='Brute Force loop', total=n_iter):
         inds = np.array(inds).reshape(n,n)
@@ -37,7 +37,7 @@ def integerRouting(net):
 
     return best_phi, best_score
 
-        
+
 
 
 
