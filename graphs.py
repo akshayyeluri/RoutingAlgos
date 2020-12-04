@@ -108,7 +108,7 @@ class Network:
 
         nx.draw_networkx(self.graph, pos=pos, ax=ax)
         if withEdgeTraffic and self.checkPhi():
-            labels = {(i,j): self.F[i,j] for i in range(n) for j in range(n) if self.F[i,j] != 0}
+            labels = {(i,j): np.round(self.F[i,j], 3) for i in range(n) for j in range(n) if not np.isclose(self.F[i,j], 0)}
             nx.draw_networkx_edge_labels(self.graph, pos=pos, ax=ax,\
                     edge_labels=labels, label_pos=label_pos)
         return ax
@@ -178,6 +178,7 @@ def getTraffic(phi, R):
         if np.linalg.det(A) == 0:
             raise ValueError('LinAlgError caused by invalid phi!')
         T[:, j] = np.linalg.solve(A, b)
+    T[np.isclose(T, 0) | (T < 0)] = 0 # Numerical stability
     return T
 
 
@@ -187,6 +188,7 @@ def getF(phi, T):
     F = np.empty((n,n))
     for i in range(n):
         F[i, :] = phi[:, i, :].T @ T[i, :]
+    F[np.isclose(F, 0) | (F < 0)] = 0 # Numerical stability
     return F
 
 

@@ -4,6 +4,7 @@ import math
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+import pdb
 
 def initializePhi(net):
     phi = np.empty((net.n, net.n, net.n))
