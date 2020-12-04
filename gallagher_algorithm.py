@@ -145,3 +145,46 @@ def updateRoutingTable(net, dR, tags, eta):
             phi[j, i, min_ind] += delta_sum
     return phi
 
+
+def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
+    '''
+    Iteratively runs the gallagher algorithm with step size eta on network
+    net, returning all the scores for each iteration. 
+
+    Converges after nTrials (if nTrials is not None),
+    or after the last converge_perc fraction of the scores are close
+    '''
+    assert(net.hasPhi())
+    scores = [net.D_T()]
+
+    if retPhi:
+        phis = []
+
+    while True:
+        dR = calculateMarginals(net)
+        tags = calculateBlocked(net, dR, eta)
+        phi = updateRoutingTable(net, dR, tags, eta)
+        net.setPhi(phi)
+        scores.append(net.D_T())
+
+        if retPhi:
+            phis.append(phi)
+
+        # Convergence if nTrials reached
+        if nTrials is not None:
+            if len(scores) == nTrials + 1:
+                break
+
+        # Convergence if last 10% of scores all close
+        else:
+            n_scores = len(scores)
+            n_thresh = int(n_scores * converge_perc)
+            last_scores = np.array(scores[n_scores - n_thresh:])
+            if (n_scores > converge_perc * 200) and \
+                    np.all(np.isclose(last_scores, scores[-1])):
+                break
+
+    if retPhi:
+        return scores, phis
+    return scores
+

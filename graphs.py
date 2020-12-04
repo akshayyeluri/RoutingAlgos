@@ -192,23 +192,5 @@ def getF(phi, T):
     return F
 
 
-def obj(phi_flat, network):
-    '''
-    This calculates D_T, the expected packet delay of a network. This
-    version of the objective is used for optimization routines, for a standalone
-    D_T version see the D_T method in the Network class
-    '''
-    n = network.n
-    R = network.R
-    D = network.D
-    conv = network.converter
-
-    phi = conv.toPhi(phi_flat)
-    try:
-        T = getTraffic(phi, R)
-    except ValueError as e:
-        return np.inf
-    F = getF(phi, T)
-    return np.sum(D * F)
 
 
