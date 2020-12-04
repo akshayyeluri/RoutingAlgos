@@ -5,8 +5,6 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
-eta = 0.01
-
 def initializePhi(net):
     phi = np.empty((net.n, net.n, net.n))
     paths = dict(nx.all_pairs_shortest_path(net.graph))
@@ -40,8 +38,20 @@ def calculateMarginals(net):
                 dR[j, i] += phi[j, i, k] * (D[i, k] + dR[j, k])
     return dR
 
+def calculateMarginals_v2(net, dR):
+    D = net.D
+    n = net.n
+    phi = net.phi
+    dR = np.zeros((net.n, net.n))
+    for j in range(n):
+        sub_phi = phi[j]
+        b = np.diag(sub_phi @ D.T)
+        A = (np.eye(n) - sub_phi)
+        dR[j] = np.linalg.solve(A, b)
+    return dR
+
 # checks if blocking condition is met for link (i, k) with respect to j
-def check_condition(net, j, i, k, dR):
+def check_condition(net, j, i, k, dR, eta):
     D = net.D
     phi = net.phi
     t = net.T
@@ -56,7 +66,7 @@ def check_condition(net, j, i, k, dR):
     return is_improper and is_15
 
 # return matrix where tags[j, i] is 1 if i is a blocked node for reaching j
-def calculateBlocked(net, dR):
+def calculateBlocked(net, dR, eta):
     phi = net.phi
     t = net.T
     tags = np.zeros((net.n, net.n))
@@ -74,13 +84,13 @@ def calculateBlocked(net, dR):
                 tags[j, i] = True
             else:
                 for c in children:
-                    if check_condition(net, j, i, c, dR):
+                    if check_condition(net, j, i, c, dR, eta):
                         tags[j, i] = True
                     continue
     return tags
 
 
-def updateRoutingTable(net, dR, tags):
+def updateRoutingTable(net, dR, tags, eta):
     D = net.D
     phi = net.phi
     t = net.T
@@ -96,7 +106,7 @@ def updateRoutingTable(net, dR, tags):
                     min_ind = m
             delta_sum = 0
             for k in range(net.n):
-                if (net.adj[i, k] == 0):
+                if (tags[j, k] or net.adj[i, k] == 0):
                     continue
                 a = D[i, k] + dR[j, k] - min_D
                 #print(f'a is {a}')
@@ -104,42 +114,11 @@ def updateRoutingTable(net, dR, tags):
                 #print(f'delta is {delta}')
                 #print(f'phi is {phi[j, i, k]}')
                 #print('\n')
-                if k != m:
+                if k != min_ind:
                     phi[j, i, k] -= delta
                     delta_sum += delta
-            phi[j, i, m] += delta_sum
+            phi[j, i, min_ind] += delta_sum
             #embed()
-            print(delta_sum)
+            #print(delta_sum)
     return phi
-
-seed = 6
-n = 10
-np.random.seed(seed)
-D = np.random.randint(1, 3, size=(n,n))
-G = Network(n, seed=seed, D=D)
-phi = initializePhi(G)
-#phi_flat = G.converter.fromPhi(phi)
-#phi_flat[phi_flat==0] = 0.2
-#phi_flat[phi_flat==1] = 0.8
-#G.phi = G.converter.toPhi(phi_flat)
-#G.updateFT()
-G.phi = phi
-score_0 = D_T(G)
-for _ in range(7):
-    dR = calculateMarginals(G)
-    tags = calculateBlocked(G, dR)
-    phi = updateRoutingTable(G, dR, tags)
-    embed()
-    
-G.phi = phi
-score_1 = D_T(G)
-
-
-
-
-
-
-
-
-
 

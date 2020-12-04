@@ -66,6 +66,7 @@ class Network:
         while not nx.is_connected(self.graph):
             inc += 1 # Update random seed to get a new graph
             self.graph = nx.gnp_random_graph(n, p, directed=False, seed=seed+inc)
+        self.graph = self.graph.to_directed()
 
         # Adjacency matrix of our graph
         self.adj = np.asarray(nx.adjacency_matrix(self.graph).todense()) 
