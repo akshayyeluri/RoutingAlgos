@@ -5,7 +5,12 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 
-def initializePhi(net):
+def shortestPathsPhi(net):
+    '''
+    Takes a Network and returns a phi corresponding to routing along the shortest paths (with 
+    respect to link length) in the network. Useful for initializing a loop-free phi to start off
+    the Gallagher algorithm
+    '''
     phi = np.empty((net.n, net.n, net.n))
     paths = dict(nx.all_pairs_shortest_path(net.graph))
     for j in range(net.n):
@@ -27,6 +32,11 @@ def phiCheck(net):
     return (cond1 and cond2)
 
 def calculateMarginals(net):
+    '''
+    Takes a Network with n nodes and returns n by n matrix of marginals dR
+    (where dR[j,i] is denoted dD_T/dr_i(j) in the Gallagher paper). Utilizes
+    the distributed computing method describes in the paper.
+    '''
     D = net.D
     phi = net.phi
     dR = np.zeros((net.n, net.n))
@@ -39,6 +49,11 @@ def calculateMarginals(net):
     return dR
 
 def calculateMarginals_v2(net, dR):
+    '''
+    Takes a Network with n nodes and returns n by n matrix of marginals dR
+    (where dR[j,i] is denoted dD_T/dr_i(j) in the Gallagher paper). Utilizes
+    linear algebra for speed, is not a distributed algorithm.
+    '''
     D = net.D
     n = net.n
     phi = net.phi
@@ -50,8 +65,10 @@ def calculateMarginals_v2(net, dR):
         dR[j] = np.linalg.solve(A, b)
     return dR
 
-# checks if blocking condition is met for link (i, k) with respect to j
 def check_condition(net, j, i, k, dR, eta):
+    '''
+    Returns True if link (i, k) causes node i to be blocked with respect to j
+    '''
     D = net.D
     phi = net.phi
     t = net.T
@@ -59,19 +76,22 @@ def check_condition(net, j, i, k, dR, eta):
     is_15 = False
     if (phi[j, i, k] > 0) and (dR[j, i] <= dR[j, k]):
         is_improper = True
-        # print(is_improper)
     if (phi[j, i, k] >= eta * (D[i, k] + dR[j, k] - dR[j, i]) / t[i, j]):
         is_15 = True
-        # print(is_15)
     return is_improper and is_15
 
-# return matrix where tags[j, i] is 1 if i is a blocked node for reaching j
+ 
 def calculateBlocked(net, dR, eta):
+    '''
+    Returns matrix tags where tags[j, k] is 1 iff link (i, k) is blocked with respect to j
+    for all i.
+    '''
     phi = net.phi
     t = net.T
     tags = np.zeros((net.n, net.n))
     for j in range(net.n):
         downstream = {}
+        # routing table induced DAG with respect to having destination node j
         destj = nx.from_numpy_matrix(phi[j, :, :], parallel_edges=False, create_using=nx.DiGraph)
         top_sorted = list(reversed(list(nx.topological_sort(destj))))
         for i in top_sorted:
@@ -80,9 +100,11 @@ def calculateBlocked(net, dR, eta):
                 continue
             children = list(destj.successors(i))
             downstream[i] = sum([downstream[c] for c in children], []) + children
+            # check if tag has been passed up from children
             if np.any([tags[j, d] for d in downstream[i]]):
                 tags[j, i] = True
             else:
+                # check condition for immediate downstream children
                 for c in children:
                     if check_condition(net, j, i, c, dR, eta):
                         tags[j, i] = True
@@ -91,11 +113,15 @@ def calculateBlocked(net, dR, eta):
 
 
 def updateRoutingTable(net, dR, tags, eta):
+    '''
+    Applies Gallagher algorithm for updating phi and returns resultant phi
+    '''
     D = net.D
     phi = net.phi
     t = net.T
     for j in range(net.n):
         for i in range(net.n):
+            # compute min and min index of D[i, m] + dR[j, m] (over m not blocked)
             min_D = math.inf
             min_ind = -1
             for m in range(net.n):
@@ -109,16 +135,12 @@ def updateRoutingTable(net, dR, tags, eta):
                 if (tags[j, k] or net.adj[i, k] == 0):
                     continue
                 a = D[i, k] + dR[j, k] - min_D
-                #print(f'a is {a}')
                 delta = min(phi[j, i, k], (eta * a / t[i, j]) if t[i, j] != 0 else np.inf)
-                #print(f'delta is {delta}')
-                #print(f'phi is {phi[j, i, k]}')
-                #print('\n')
                 if k != min_ind:
+                    # subtract from non optimal links
                     phi[j, i, k] -= delta
                     delta_sum += delta
+            # add to optimal link (maintaining probability distribution)
             phi[j, i, min_ind] += delta_sum
-            #embed()
-            #print(delta_sum)
     return phi
 
