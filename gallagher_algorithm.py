@@ -49,7 +49,7 @@ def calculateMarginals(net):
                 dR[j, i] += phi[j, i, k] * (D[i, k] + dR[j, k])
     return dR
 
-def calculateMarginals_v2(net, dR):
+def calculateMarginals_v2(net):
     '''
     Takes a Network with n nodes and returns n by n matrix of marginals dR
     (where dR[j,i] is denoted dD_T/dr_i(j) in the Gallagher paper). Utilizes
