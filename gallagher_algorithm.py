@@ -146,6 +146,30 @@ def updateRoutingTable(net, dR, tags, eta):
     return phi
 
 
+def convergenceConditions(net):
+    ''' Checks condition 9 in Gallagher Paper to see if we have valid convergence '''
+    dR = calculateMarginals(net)
+    phi = net.phi
+    D = net.D
+    n = net.n
+
+    for j in range(n):
+        for i in range(n):
+            if i == j:
+                continue
+            where_links = net.adj[i] > 0
+            ms = np.where(where_links)[0]
+            d_min = np.min(D[i, ms] + dR[j, ms])
+            equality_req = (phi[j, i, :] > 0)
+            vals = D[i, :] + dR[j, :] - d_min
+            if (np.any(vals[where_links] < 0) or np.any(vals[equality_req] != 0)):
+                pdb.set_trace()
+                return False
+
+    return all([(D[i, k] + dR[j, k] - dR[j, i] >= 0) \
+                 for i,j,k, in zip(range(n), range(n), range(n))])
+
+
 def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
     '''
     Iteratively runs the gallagher algorithm with step size eta on network
