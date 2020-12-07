@@ -8,7 +8,7 @@ import pdb
 
 def shortestPathsPhi(net):
     '''
-    Takes a Network and returns a phi corresponding to routing along the shortest paths (with 
+    Takes a Network and returns a phi corresponding to routing along the shortest paths (with
     respect to link length) in the network. Useful for initializing a loop-free phi to start off
     the Gallagher algorithm
     '''
@@ -38,7 +38,7 @@ def calculateMarginals(net):
     (where dR[j,i] is denoted dD_T/dr_i(j) in the Gallagher paper). Utilizes
     the distributed computing method describes in the paper.
     '''
-    D = net.D
+    D = net.derivD
     phi = net.phi
     dR = np.zeros((net.n, net.n))
     for j in range(net.n):
@@ -55,7 +55,7 @@ def calculateMarginals_v2(net):
     (where dR[j,i] is denoted dD_T/dr_i(j) in the Gallagher paper). Utilizes
     linear algebra for speed, is not a distributed algorithm.
     '''
-    D = net.D
+    D = net.derivD
     n = net.n
     phi = net.phi
     dR = np.zeros((net.n, net.n))
@@ -70,7 +70,7 @@ def check_condition(net, j, i, k, dR, eta):
     '''
     Returns True if link (i, k) causes node i to be blocked with respect to j
     '''
-    D = net.D
+    D = net.derivD
     phi = net.phi
     t = net.T
     is_improper = False
@@ -81,7 +81,7 @@ def check_condition(net, j, i, k, dR, eta):
         is_15 = True
     return is_improper and is_15
 
- 
+
 def calculateBlocked(net, dR, eta):
     '''
     Returns matrix tags where tags[j, k] is 1 iff link (i, k) is blocked with respect to j
@@ -117,11 +117,25 @@ def updateRoutingTable(net, dR, tags, eta):
     '''
     Applies Gallagher algorithm for updating phi and returns resultant phi
     '''
-    D = net.D
+    D = net.derivD
     phi = net.phi
     t = net.T
     for j in range(net.n):
         for i in range(net.n):
+
+            # Vectorized version
+            #mask = (tags[j,:] == 0) & (net.adj[i,:] > 0)
+            #ms = np.where(mask)[0]
+            #min_idx = ms[np.argmin(D[i, mask] + dR[j, mask])]
+            #min_D = D[i, min_idx] + dR[j, min_idx]
+            #a = D[i, mask] + dR[j, mask] - min_D
+            #delt = np.zeros(net.n)
+            #delt[mask] = np.minimum(phi[j, i, mask], (eta * a / t[i, j]) if t[i, j] != 0 else np.inf)
+            #idx = np.ones(net.n, bool); idx[min_idx] = False
+            #phi[j, i, min_idx] += np.sum(delt[idx])
+            #phi[j, i, idx] -= delt[idx]
+            #phi[j, i, ~mask] = 0
+
             # compute min and min index of D[i, m] + dR[j, m] (over m not blocked)
             min_D = math.inf
             min_ind = -1
@@ -146,34 +160,23 @@ def updateRoutingTable(net, dR, tags, eta):
     return phi
 
 
+
 def convergenceConditions(net):
-    ''' Checks condition 9 in Gallagher Paper to see if we have valid convergence '''
+    ''' Checks condition 8 in Gallagher Paper to see if we have valid convergence '''
     dR = calculateMarginals(net)
     phi = net.phi
-    D = net.D
+    D = net.derivD
     n = net.n
-
-    for j in range(n):
-        for i in range(n):
-            if i == j:
-                continue
-            where_links = net.adj[i] > 0
-            ms = np.where(where_links)[0]
-            d_min = np.min(D[i, ms] + dR[j, ms])
-            equality_req = (phi[j, i, :] > 0)
-            vals = D[i, :] + dR[j, :] - d_min
-            if (np.any(vals[where_links] < 0) or np.any(vals[equality_req] != 0)):
-                pdb.set_trace()
-                return False
 
     return all([(D[i, k] + dR[j, k] - dR[j, i] >= 0) \
                  for i,j,k, in zip(range(n), range(n), range(n))])
 
 
+
 def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
     '''
     Iteratively runs the gallagher algorithm with step size eta on network
-    net, returning all the scores for each iteration. 
+    net, returning all the scores for each iteration.
 
     Converges after nTrials (if nTrials is not None),
     or after the last converge_perc fraction of the scores are close

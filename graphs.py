@@ -49,8 +49,8 @@ class Network:
     This class represents a network, including various state necessary for
     the routing algorithms we are implementing
     '''
-    def __init__(self, adj=None, R=np.random.binomial, D=None, phi=None, \
-                                         seed=7, n=None, p=0.4):
+    def __init__(self, adj=None, R=np.random.binomial, D_scaling=None, phi=None, seed=7, D_func=None, derivD_func=None, \
+                                         n=None, p=0.4):
         self.seed = seed    # Random seed to ensure same graph/results each time
 
         if adj is not None: # Initialize from adjacency matrix
@@ -69,9 +69,19 @@ class Network:
             # Adjacency matrix of our graph
             self.adj = np.asarray(nx.adjacency_matrix(self.graph).todense())
 
-        if D is None:
-            D = np.ones((n,n))
-        self.D = D          # Scaling factors for F_ik's in objective function
+        if D_scaling is None:
+            D_scaling = np.ones((self.n, self.n))
+        self.D_scaling = D_scaling # Scaling factors for F_ik's in objective function
+
+        if D_func is None:
+            # D_func = lambda F: 1/2 * self.D_scaling * F ** 2
+            D_func = lambda F: self.D_scaling * F
+        self.D_func = D_func
+
+        if derivD_func is None:
+            # derivD_func = lambda F: self.D_scaling * F
+            derivD_func = lambda F: self.D_scaling
+        self.derivD_func = derivD_func
 
         # R matrix where R_ij is traffic generated from i going to j
         np.random.seed(seed)
@@ -122,6 +132,7 @@ class Network:
         if self.phi is not None:
             self.T = getTraffic(self.phi, self.R)
             self.F = getF(self.phi, self.T)
+            self.derivD = self.derivD_func(self.F)
 
 
     def hasPhi(self):
@@ -152,13 +163,13 @@ class Network:
         '''
         if not self.hasPhi():
             raise ValueError('No routing tables for network')
-        return np.sum(self.D * self.F)
+        return np.sum(self.D_func(self.F))
 
 
     def toPickle(self, fName):
         ''' Dumps the network to a pickle '''
         with open(fName, 'wb') as f:
-            pickle.dump((self.adj, self.R, self.D, self.phi, self.seed), f)
+            pickle.dump((self.adj, self.R, self.D_scaling, self.phi, self.seed), f)
 
 
 def netFromPickle(fName):
@@ -173,7 +184,7 @@ def getTraffic(phi, R):
     n = R.shape[0]
     T = np.empty((n,n))
     for j in range(n):
-        A = (np.eye(n) - phi[j, :, :]) # A_ik = phi_ik(j)
+        A = (np.eye(n) - phi[j, :, :].T) # A_ik = phi_ik(j)
         b = R[:, j]
         if np.linalg.det(A) == 0:
             raise ValueError('LinAlgError caused by invalid phi!')
@@ -190,7 +201,3 @@ def getF(phi, T):
         F[i, :] = phi[:, i, :].T @ T[i, :]
     F[np.isclose(F, 0) | (F < 0)] = 0 # Numerical stability
     return F
-
-
-
-

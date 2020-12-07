@@ -51,7 +51,6 @@ def obj(phi_flat, network):
     '''
     n = network.n
     R = network.R
-    D = network.D
     conv = network.converter
 
     phi = conv.toPhi(phi_flat)
@@ -60,7 +59,7 @@ def obj(phi_flat, network):
     except ValueError as e:
         return np.inf
     F = getF(phi, T)
-    return np.sum(D * F)
+    return np.sum(network.D_func(F))
 
 
 def optim(G):
