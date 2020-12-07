@@ -25,12 +25,14 @@ def shortestPathsPhi(net):
                 phi[j, i, :] = k_vec
     return phi
 
+
 def phiCheck(net):
     phi = net.phi
     mask = (net.adj == 0)
     cond1 = np.all(phi[:, mask] == 0)
     cond2 = np.all(np.isclose(np.sum(phi, axis=2), 1 - np.eye(len(phi))))
     return (cond1 and cond2)
+
 
 def calculateMarginals(net):
     '''
