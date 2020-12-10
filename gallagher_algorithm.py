@@ -187,7 +187,7 @@ def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
     scores = [net.D_T()]
 
     if retPhi:
-        phis = []
+        phis = [net.phi.copy()]
 
     while True:
         dR = calculateMarginals(net)
@@ -197,7 +197,7 @@ def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
         scores.append(net.D_T())
 
         if retPhi:
-            phis.append(phi)
+            phis.append(phi.copy())
 
         # Convergence if nTrials reached
         if nTrials is not None:

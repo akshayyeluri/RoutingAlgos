@@ -4,6 +4,7 @@ import pickle
 import scipy.stats as st
 import matplotlib.pyplot as plt
 from IPython import embed
+import pdb
 
 
 class Converter:
@@ -100,6 +101,54 @@ class Network:
         # Routing tables, Phi[j, i, k] is fraction of traffic passing through
         # i on the way to j that gets routed to node k next
         self.setPhi(phi)
+
+
+    def visualizeWithColors(self, layout='spring', seed=None, wMat=None,\
+                            ax=None, wmax=4, withLabels=False, label_pos=0.3,\
+                            mapper=None, weight_min=None, weight_max=None, arcEdges=False):
+        ''' Helper function to visualize colored edge networkx for movies 
+        (wmax is width max, aesthetic thing for linesize of largest edge)'''
+
+        if ax is None:
+            ax = plt.subplot(111)
+        if wMat is None:
+            wMat = self.F
+
+        n = self.n
+        if layout == 'spring':
+            random_seed = self.seed if seed is None else seed
+            pos = nx.spring_layout(self.graph, seed=random_seed)
+        elif layout == 'planar':
+            pos = nx.planar_layout(self.graph)
+
+        edges = self.graph.edges()
+        weights = np.array([wMat[i, j] for (i, j) in list(edges)])
+        mask = weights > 0
+        colors = mapper.to_rgba(weights[mask])
+        a = weights.min() if weight_min is None else weight_min
+        b = weights.max() if weight_max is None else weight_max
+        weights = (weights - a) / (b - a)
+
+        options = {
+                'node_color': 'r',
+                'edgelist'  : list(np.array(edges)[mask]),
+                'edge_color': colors,
+                'width'     : weights[mask] * wmax,
+        }
+        if arcEdges:
+            options['connectionstyle'] = 'arc3, rad=0.1'
+
+        nx.draw_networkx(self.graph, pos=pos, **options, ax=ax)
+
+        if withLabels:
+            labels = {(i,j): np.round(wMat[i,j], 3) for i in range(n) \
+                             for j in range(n) if not \
+                             np.isclose(wMat[i,j], 0)}
+            nx.draw_networkx_edge_labels(self.graph, pos=pos, ax=ax,\
+                    edge_labels=labels, label_pos=label_pos)
+
+        return ax
+
 
 
     def visualize(self, withEdgeTraffic=False, layout='spring', \
