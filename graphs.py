@@ -104,9 +104,9 @@ class Network:
 
 
     def visualizeWithColors(self, layout='spring', seed=None, wMat=None,\
-                            ax=None, wmax=4, withLabels=False, label_pos=0.3,\
+                            ax=None, wmax=4, withLabels=False, label_pos=0.3, dst_node=None,\
                             mapper=None, weight_min=None, weight_max=None, arcEdges=False):
-        ''' Helper function to visualize colored edge networkx for movies 
+        ''' Helper function to visualize colored edge networkx for movies
         (wmax is width max, aesthetic thing for linesize of largest edge)'''
 
         if ax is None:
@@ -123,14 +123,17 @@ class Network:
 
         edges = self.graph.edges()
         weights = np.array([wMat[i, j] for (i, j) in list(edges)])
-        mask = weights > 0
+        mask = np.round(weights, 3) > 0
         colors = mapper.to_rgba(weights[mask])
         a = weights.min() if weight_min is None else weight_min
         b = weights.max() if weight_max is None else weight_max
         weights = (weights - a) / (b - a)
+        node_colors = ['r'] * n
+        if dst_node is not None:
+            node_colors[dst_node] = 'tan'
 
         options = {
-                'node_color': 'r',
+                'node_color': node_colors,
                 'edgelist'  : list(np.array(edges)[mask]),
                 'edge_color': colors,
                 'width'     : weights[mask] * wmax,
@@ -143,7 +146,7 @@ class Network:
         if withLabels:
             labels = {(i,j): np.round(wMat[i,j], 3) for i in range(n) \
                              for j in range(n) if not \
-                             np.isclose(wMat[i,j], 0)}
+                             np.round(wMat[i,j], 3) == 0}
             nx.draw_networkx_edge_labels(self.graph, pos=pos, ax=ax,\
                     edge_labels=labels, label_pos=label_pos)
 

@@ -6,14 +6,21 @@ import networkx as nx
 import numpy as np
 import pdb
 
-def shortestPathsPhi(net):
+def shortestPathsPhi(net, useCurrentF=False):
     '''
     Takes a Network and returns a phi corresponding to routing along the shortest paths (with
     respect to link length) in the network. Useful for initializing a loop-free phi to start off
     the Gallagher algorithm
     '''
+    if not useCurrentF:
+        paths = dict(nx.all_pairs_dijkstra_path(net.graph))
+    else:
+        w = {(i, j): net.F[i, j] for i in range(net.n) for j in range(net.n)}
+        g = nx.from_numpy_matrix(net.F, create_using=nx.DiGraph)
+        nx.set_edge_attributes(g, w, 'weight')
+        paths = dict(nx.all_pairs_dijkstra_path(g, weight='weight'))
+
     phi = np.empty((net.n, net.n, net.n))
-    paths = dict(nx.all_pairs_shortest_path(net.graph))
     for j in range(net.n):
         for i in range(net.n):
             if i == j:
@@ -174,10 +181,9 @@ def convergenceConditions(net):
                  for i,j,k, in zip(range(n), range(n), range(n))])
 
 
-
-def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
+def iterAlgo(net, updateFunc, nTrials=None, converge_perc=0.1, retPhi=False, **kwargs):
     '''
-    Iteratively runs the gallagher algorithm with step size eta on network
+    Iteratively runs a routing algorithm given by updateFunc with kwargs arguments on
     net, returning all the scores for each iteration.
 
     Converges after nTrials (if nTrials is not None),
@@ -190,9 +196,7 @@ def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
         phis = [net.phi.copy()]
 
     while True:
-        dR = calculateMarginals(net)
-        tags = calculateBlocked(net, dR, eta)
-        phi = updateRoutingTable(net, dR, tags, eta)
+        phi = updateFunc(net, **kwargs)
         net.setPhi(phi)
         scores.append(net.D_T())
 
@@ -217,3 +221,15 @@ def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
         return scores, phis
     return scores
 
+
+
+def iterGallagher(net, eta=0.1, nTrials=None, converge_perc=0.1, retPhi=False):
+    ''' Iteratively run the Gallagher algorithm '''
+
+    def updateFunc(net, eta):
+        dR = calculateMarginals(net)
+        tags = calculateBlocked(net, dR, eta)
+        return updateRoutingTable(net, dR, tags, eta)
+
+    return iterAlgo(net, updateFunc=updateFunc, nTrials=nTrials, converge_perc=converge_perc,
+                    retPhi=retPhi, eta=eta)
